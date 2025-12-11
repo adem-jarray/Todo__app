@@ -1,0 +1,55 @@
+{
+  "dashboard": {
+    "title": "Monitoring Todo App",
+    "panels": [
+      {
+        "title": "CPU Usage",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "100 - (avg by (instance) (rate(node_cpu_seconds_total{mode=\"idle\"}[5m])) * 100)",
+            "legendFormat": "CPU Usage {{instance}}"
+          }
+        ],
+        "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 }
+      },
+      {
+        "title": "Memory Usage",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "nodejs_memory_usage_bytes{type=\"heapUsed\"}",
+            "legendFormat": "Heap Used"
+          },
+          {
+            "expr": "nodejs_memory_usage_bytes{type=\"heapTotal\"}",
+            "legendFormat": "Heap Total"
+          }
+        ],
+        "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 }
+      },
+      {
+        "title": "Request Duration",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(http_request_duration_seconds_sum[5m]) / rate(http_request_duration_seconds_count[5m])",
+            "legendFormat": "Avg Duration"
+          }
+        ],
+        "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 }
+      },
+      {
+        "title": "Active Requests",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "nodejs_active_requests",
+            "legendFormat": "Active Requests"
+          }
+        ],
+        "gridPos": { "h": 4, "w": 6, "x": 0, "y": 16 }
+      }
+    ]
+  }
+}
