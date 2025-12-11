@@ -1,0 +1,67 @@
+name: Collect Logs - Fixed
+on: [push]
+
+jobs:
+  collect-logs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: 1. Build with Node (not nodemon)
+        run: |
+          echo "🔧 BUILD AVEC NODE DIRECT"
+          cd backend
+          
+          # Créer un Dockerfile simplifié
+          cat > Dockerfile.simple << 'EOF'
+          FROM node:18-alpine
+          WORKDIR /app
+          COPY package*.json ./
+          RUN npm install --only=production
+          COPY . .
+          EXPOSE 5000
+          CMD ["node", "server.js"]
+          EOF
+          
+          docker build -t todo-app-simple -f Dockerfile.simple .
+          echo "✅ Image built"
+      
+      - name: 2. Start Container
+        run: |
+          echo "🚀 DÉMARRAGE"
+          # Sans MongoDB pour simplifier
+          docker run -d \
+            --name todo-simple \
+            -e MONGO_URI=mongodb://dummy:27017/test \
+            -p 5000:5000 \
+            todo-app-simple
+          
+          echo "⏳ Waiting..."
+          sleep 8
+      
+      - name: 3. SEE REAL LOGS
+        run: |
+          echo "="
+          echo "📝 VRAIS LOGS DOCKER"
+          echo "="
+          echo "Container status:"
+          docker ps -a | grep todo-simple
+          echo ""
+          echo "REAL LOGS BELOW:"
+          echo "----------------"
+          docker logs todo-simple
+          echo "----------------"
+          
+          # Sauvegarder
+          docker logs todo-simple > real-app-logs.txt
+          
+          echo ""
+          echo "✅ LOGS SAVED"
+          echo "First lines:"
+          head -5 real-app-logs.txt
+      
+      - name: 4. Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: fixed-logs
+          path: real-app-logs.txt
