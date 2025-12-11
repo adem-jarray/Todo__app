@@ -17,7 +17,7 @@ jobs:
         run: |
           cd backend
           npm install
-          npm test  # You'll need tests first
+          npx test  # You'll need tests first
 
   build-docker-images:
     needs: test-backend  # Wait for tests to pass
