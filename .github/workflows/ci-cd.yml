@@ -83,11 +83,11 @@ jobs:
             
             test('Vérification de la configuration', () => {
               const fs = require('fs');
-              // Vérifie que les fichiers essentiels existent
+              # Vérifie que les fichiers essentiels existent
               expect(fs.existsSync('./package.json')).toBe(true);
               expect(fs.existsSync('./server.js')).toBe(true);
               
-              // Vérifie la structure du package.json
+              # Vérifie la structure du package.json
               const packageJson = require('./package.json');
               expect(packageJson.name).toBe('todo-backend');
               expect(packageJson.scripts.test).toBe('jest');
@@ -100,7 +100,7 @@ jobs:
           
           echo "✅ Tests CI/CD validés avec succès"
 
-    # PHASE 3: BUILD DOCKER AUTOMATISÉ (SANS DOCKER HUB)
+  # PHASE 3: BUILD DOCKER AUTOMATISÉ (SANS DOCKER HUB)
   build-docker-automated:
     runs-on: ubuntu-latest
     needs: tests
@@ -170,43 +170,44 @@ jobs:
           echo "   - Le pipeline CI/CD a automatiquement construit 2 images Docker"
           echo "   - Aucune intervention manuelle nécessaire"
           echo "   - Validation complète de la conteneurisation"
-  # AJOUTEZ CETTE PHASE APRÈS "build-docker-automated"
-deploy-automated:
-  runs-on: ubuntu-latest
-  needs: build-docker-automated
-  steps:
-    - name: Checkout du code
-      uses: actions/checkout@v3
-    
-    - name: Déploiement automatique simple
-      run: |
-        echo "🚀 DÉPLOIEMENT AUTOMATIQUE"
-        echo "========================="
-        
-        # 1. Arrêter l'ancien conteneur (si existant)
-        docker stop todo-app-production 2>/dev/null || true
-        docker rm todo-app-production 2>/dev/null || true
-        
-        # 2. Démarrer le nouveau conteneur avec l'image fraîchement construite
-        docker run -d \
-          --name todo-app-production \
-          -p 8080:5000 \
-          todo-backend-ci
-        
-        echo "✅ Application déployée automatiquement!"
-        echo "🌐 Accessible sur: http://localhost:8080"
-        echo "📅 Déployé le: $(date)"
-        echo "🔗 SHA du commit: ${{ github.sha }}"
-        
-        # 3. Vérification que l'app fonctionne
-        sleep 3
-        echo "🔍 Vérification du déploiement..."
-        curl -f http://localhost:8080/health || echo "⚠️ L'endpoint /health n'est pas disponible"
 
-          # PHASE 4: MONITORING ET LOGS RÉELS
-  monitoring-reel:
+  # PHASE 4: DÉPLOIEMENT AUTOMATIQUE
+  deploy-automated:
     runs-on: ubuntu-latest
     needs: build-docker-automated
+    steps:
+      - name: Checkout du code
+        uses: actions/checkout@v3
+    
+      - name: Déploiement automatique simple
+        run: |
+          echo "🚀 DÉPLOIEMENT AUTOMATIQUE"
+          echo "========================="
+          
+          # 1. Arrêter l'ancien conteneur (si existant)
+          docker stop todo-app-production 2>/dev/null || true
+          docker rm todo-app-production 2>/dev/null || true
+          
+          # 2. Démarrer le nouveau conteneur avec l'image fraîchement construite
+          docker run -d \
+            --name todo-app-production \
+            -p 8080:5000 \
+            todo-backend-ci
+          
+          echo "✅ Application déployée automatiquement!"
+          echo "🌐 Accessible sur: http://localhost:8080"
+          echo "📅 Déployé le: $(date)"
+          echo "🔗 SHA du commit: ${{ github.sha }}"
+          
+          # 3. Vérification que l'app fonctionne
+          sleep 3
+          echo "🔍 Vérification du déploiement..."
+          curl -f http://localhost:8080/health || echo "⚠️ L'endpoint /health n'est pas disponible"
+
+  # PHASE 5: MONITORING ET LOGS RÉELS
+  monitoring-reel:
+    runs-on: ubuntu-latest
+    needs: deploy-automated
     steps:
       - name: Checkout du code
         uses: actions/checkout@v3
@@ -333,7 +334,8 @@ todo-app-monitor-container   todo-app-monitor-container   0.15%     25.3MiB / 1.
             docker-stats.txt
             execution-time.txt
             dashboard-dynamique.md
-  # PHASE 5: RAPPORT FINAL
+
+  # PHASE 6: RAPPORT FINAL
   final-report:
     runs-on: ubuntu-latest
     needs: monitoring-reel
@@ -353,12 +355,19 @@ todo-app-monitor-container   todo-app-monitor-container   0.15%     25.3MiB / 1.
           echo "   1. Validation de la structure du projet"
           echo "   2. Tests automatisés CI/CD"
           echo "   3. Build Docker automatisé"
+          echo "   4. Déploiement automatique"  # AJOUTÉ !
+          echo "   5. Monitoring et logs"
           echo ""
           echo "🐳 DÉTAILS DU BUILD DOCKER AUTOMATISÉ:"
           echo "   - Processus déclenché automatiquement sur git push"
           echo "   - Construction de 2 images: backend et frontend"
           echo "   - Validation de la syntaxe des Dockerfiles"
           echo "   - Aucun registre externe requis (Docker Hub)"
+          echo ""
+          echo "🚀 DÉTAILS DU DÉPLOIEMENT AUTOMATIQUE:"
+          echo "   - L'application est déployée automatiquement après chaque build"
+          echo "   - Le conteneur est mis à jour avec la nouvelle version"
+          echo "   - Accessible sur http://localhost:8080"
           echo ""
           echo "📈 RÉSULTAT: Pipeline CI/CD opérationnel et fonctionnel!"
           echo ""
