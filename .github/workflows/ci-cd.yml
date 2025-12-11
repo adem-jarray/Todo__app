@@ -170,6 +170,38 @@ jobs:
           echo "   - Le pipeline CI/CD a automatiquement construit 2 images Docker"
           echo "   - Aucune intervention manuelle nécessaire"
           echo "   - Validation complète de la conteneurisation"
+  # AJOUTEZ CETTE PHASE APRÈS "build-docker-automated"
+deploy-automated:
+  runs-on: ubuntu-latest
+  needs: build-docker-automated
+  steps:
+    - name: Checkout du code
+      uses: actions/checkout@v3
+    
+    - name: Déploiement automatique simple
+      run: |
+        echo "🚀 DÉPLOIEMENT AUTOMATIQUE"
+        echo "========================="
+        
+        # 1. Arrêter l'ancien conteneur (si existant)
+        docker stop todo-app-production 2>/dev/null || true
+        docker rm todo-app-production 2>/dev/null || true
+        
+        # 2. Démarrer le nouveau conteneur avec l'image fraîchement construite
+        docker run -d \
+          --name todo-app-production \
+          -p 8080:5000 \
+          todo-backend-ci
+        
+        echo "✅ Application déployée automatiquement!"
+        echo "🌐 Accessible sur: http://localhost:8080"
+        echo "📅 Déployé le: $(date)"
+        echo "🔗 SHA du commit: ${{ github.sha }}"
+        
+        # 3. Vérification que l'app fonctionne
+        sleep 3
+        echo "🔍 Vérification du déploiement..."
+        curl -f http://localhost:8080/health || echo "⚠️ L'endpoint /health n'est pas disponible"
 
           # PHASE 4: MONITORING ET LOGS RÉELS
   monitoring-reel:
