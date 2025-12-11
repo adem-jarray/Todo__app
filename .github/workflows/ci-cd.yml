@@ -100,44 +100,76 @@ jobs:
           
           echo "✅ Tests CI/CD validés avec succès"
 
-  # PHASE 3: BUILD DOCKER AUTOMATISÉ (SANS DOCKER HUB)
-    build-docker-automated:
+    # PHASE 3: BUILD DOCKER AUTOMATISÉ (SANS DOCKER HUB)
+  build-docker-automated:
     runs-on: ubuntu-latest
     needs: tests
     steps:
       - name: Checkout du code
         uses: actions/checkout@v3
       
-      - name: Build Docker Images - Automated
+      - name: 1. Build Docker automatisé - Backend
         run: |
-          echo "🐳 BUILD DOCKER AUTOMATISÉ"
-          echo "=========================="
-          
-          # Vérifier que les dossiers existent
-          echo "Vérification des dossiers..."
-          ls -la
-          
-          # Build backend
+          echo "🐳 PHASE 3: BUILD DOCKER AUTOMATISÉ"
+          echo "==================================="
           echo ""
-          echo "1. Construction du backend:"
-          docker build -t todo-backend-ci ./backend 2>&1 | tail -10
-          echo "✅ Backend image construite"
+          echo "ÉTAPE 1: Construction de l'image backend..."
           
-          # Build frontend
-          echo ""
-          echo "2. Construction du frontend:"
-          docker build -t todo-frontend-ci ./frontend 2>&1 | tail -10
-          echo "✅ Frontend image construite"
+          # Construction de l'image Docker avec logs détaillés
+          echo "📦 Exécution de: docker build -t todo-backend-ci ./backend"
+          docker build -t todo-backend-ci ./backend --progress=plain
           
-          # Preuve finale
+          if [ $? -eq 0 ]; then
+            echo "✅ SUCCÈS: Image Docker 'todo-backend-ci' construite automatiquement"
+          else
+            echo "❌ ERREUR: Échec de la construction Docker"
+            exit 1
+          fi
+
+      - name: 2. Build Docker automatisé - Frontend
+        run: |
           echo ""
-          echo "📸 PREUVE DU BUILD AUTOMATISÉ:"
-          echo "=============================="
-          docker images | grep todo-
+          echo "ÉTAPE 2: Construction de l'image frontend..."
+          
+          # Construction de l'image Docker avec logs détaillés
+          echo "📦 Exécution de: docker build -t todo-frontend-ci ./frontend"
+          docker build -t todo-frontend-ci ./frontend --progress=plain
+          
+          if [ $? -eq 0 ]; then
+            echo "✅ SUCCÈS: Image Docker 'todo-frontend-ci' construite automatiquement"
+          else
+            echo "❌ ERREUR: Échec de la construction Docker"
+            exit 1
+          fi
+
+      - name: 3. Vérification et rapport final
+        run: |
+          echo ""
+          echo "📊 ÉTAPE 3: VÉRIFICATION ET RAPPORT"
+          echo "==================================="
+          
+          # Vérification que les images existent
+          echo "🔍 Liste des images Docker construites:"
+          echo "---------------------------------------"
+          docker images --filter "reference=todo-*-ci" --format "table {{.Repository}}\t{{.Tag}}\t{{.CreatedAt}}\t{{.Size}}"
+          
+          # Comptage des images
+          image_count=$(docker images --filter "reference=todo-*-ci" --quiet | wc -l)
           
           echo ""
-          echo "🎉 BUILD DOCKER AUTOMATISÉ RÉUSSI!"
-          echo "Commande 'docker build' exécutée automatiquement par GitHub Actions."
+          echo "📋 RAPPORT FINAL DU BUILD DOCKER AUTOMATISÉ"
+          echo "==========================================="
+          echo "Statut: ✅ COMPLÈTEMENT RÉUSSI"
+          echo "Images construites: $image_count/2"
+          echo "Mécanisme: Construction déclenchée automatiquement par git push"
+          echo "Preuve: Commande 'docker build' exécutée dans le pipeline CI/CD"
+          echo "Timestamp: $(date '+%Y-%m-%d %H:%M:%S')"
+          echo "Commit: ${{ github.sha }}"
+          echo ""
+          echo "✅ DÉMONSTRATION RÉUSSIE:"
+          echo "   - Le pipeline CI/CD a automatiquement construit 2 images Docker"
+          echo "   - Aucune intervention manuelle nécessaire"
+          echo "   - Validation complète de la conteneurisation"
 
   # PHASE 4: RAPPORT FINAL
   final-report:
