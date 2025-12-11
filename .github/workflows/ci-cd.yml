@@ -2,7 +2,6 @@ name: DevOps CI/CD Pipeline
 on: [push, pull_request]
 
 jobs:
-  # PHASE 1: VALIDATION
   validation:
     runs-on: ubuntu-latest
     steps:
@@ -14,7 +13,6 @@ jobs:
           echo "🔍 PHASE 1: VALIDATION DE LA STRUCTURE"
           echo "========================================"
           
-          # Vérification des fichiers essentiels pour Docker
           required_files=(
             "backend/Dockerfile"
             "backend/package.json"
@@ -41,7 +39,6 @@ jobs:
             exit 1
           fi
 
-  # PHASE 2: TESTS AUTOMATISÉS
   tests:
     runs-on: ubuntu-latest
     needs: validation
@@ -54,7 +51,7 @@ jobs:
         with:
           node-version: '18'
       
-      - name: Tests CI/CD - Validation des dépendances
+      - name: Tests CI/CD
         run: |
           echo "🧪 PHASE 2: TESTS AUTOMATISÉS"
           echo "=============================="
@@ -64,18 +61,11 @@ jobs:
           npm ci --silent
           
           echo "2. Création des tests de validation CI/CD..."
-          # Création d'un fichier de test minimal pour la démonstration
           cat > ci-validation.test.js << 'EOF'
-          // Tests de validation pour le pipeline CI/CD
           describe('Validation CI/CD Pipeline', () => {
             test('Vérification des opérations basiques', () => {
-              // Test 1: Logique mathématique
               expect(2 + 2).toBe(4);
-              
-              // Test 2: Manipulation de chaînes
               expect('docker'.toUpperCase()).toBe('DOCKER');
-              
-              // Test 3: Structure de données
               const appComponents = ['backend', 'frontend', 'database'];
               expect(appComponents).toContain('backend');
               expect(appComponents.length).toBe(3);
@@ -83,11 +73,8 @@ jobs:
             
             test('Vérification de la configuration', () => {
               const fs = require('fs');
-              # Vérifie que les fichiers essentiels existent
               expect(fs.existsSync('./package.json')).toBe(true);
               expect(fs.existsSync('./server.js')).toBe(true);
-              
-              # Vérifie la structure du package.json
               const packageJson = require('./package.json');
               expect(packageJson.name).toBe('todo-backend');
               expect(packageJson.scripts.test).toBe('jest');
@@ -100,7 +87,6 @@ jobs:
           
           echo "✅ Tests CI/CD validés avec succès"
 
-  # PHASE 3: BUILD DOCKER AUTOMATISÉ (SANS DOCKER HUB)
   build-docker-automated:
     runs-on: ubuntu-latest
     needs: tests
@@ -108,52 +94,38 @@ jobs:
       - name: Checkout du code
         uses: actions/checkout@v3
       
-      - name: 1. Build Docker automatisé - Backend
+      - name: Build Backend Docker
         run: |
           echo "🐳 PHASE 3: BUILD DOCKER AUTOMATISÉ"
           echo "==================================="
-          echo ""
           echo "ÉTAPE 1: Construction de l'image backend..."
-          
-          # Construction de l'image Docker avec logs détaillés
-          echo "📦 Exécution de: docker build -t todo-backend-ci ./backend"
           docker build -t todo-backend-ci ./backend --progress=plain
-          
           if [ $? -eq 0 ]; then
-            echo "✅ SUCCÈS: Image Docker 'todo-backend-ci' construite automatiquement"
+            echo "✅ SUCCÈS: Image Docker 'todo-backend-ci' construite"
           else
             echo "❌ ERREUR: Échec de la construction Docker"
             exit 1
           fi
 
-      - name: 2. Build Docker automatisé - Frontend
+      - name: Build Frontend Docker
         run: |
-          echo ""
           echo "ÉTAPE 2: Construction de l'image frontend..."
-          
-          # Construction de l'image Docker avec logs détaillés
-          echo "📦 Exécution de: docker build -t todo-frontend-ci ./frontend"
           docker build -t todo-frontend-ci ./frontend --progress=plain
-          
           if [ $? -eq 0 ]; then
-            echo "✅ SUCCÈS: Image Docker 'todo-frontend-ci' construite automatiquement"
+            echo "✅ SUCCÈS: Image Docker 'todo-frontend-ci' construite"
           else
             echo "❌ ERREUR: Échec de la construction Docker"
             exit 1
           fi
 
-      - name: 3. Vérification et rapport final
+      - name: Vérification et rapport
         run: |
-          echo ""
           echo "📊 ÉTAPE 3: VÉRIFICATION ET RAPPORT"
           echo "==================================="
           
-          # Vérification que les images existent
           echo "🔍 Liste des images Docker construites:"
-          echo "---------------------------------------"
           docker images --filter "reference=todo-*-ci" --format "table {{.Repository}}\t{{.Tag}}\t{{.CreatedAt}}\t{{.Size}}"
           
-          # Comptage des images
           image_count=$(docker images --filter "reference=todo-*-ci" --quiet | wc -l)
           
           echo ""
@@ -162,16 +134,9 @@ jobs:
           echo "Statut: ✅ COMPLÈTEMENT RÉUSSI"
           echo "Images construites: $image_count/2"
           echo "Mécanisme: Construction déclenchée automatiquement par git push"
-          echo "Preuve: Commande 'docker build' exécutée dans le pipeline CI/CD"
           echo "Timestamp: $(date '+%Y-%m-%d %H:%M:%S')"
           echo "Commit: ${{ github.sha }}"
-          echo ""
-          echo "✅ DÉMONSTRATION RÉUSSIE:"
-          echo "   - Le pipeline CI/CD a automatiquement construit 2 images Docker"
-          echo "   - Aucune intervention manuelle nécessaire"
-          echo "   - Validation complète de la conteneurisation"
 
-  # PHASE 4: DÉPLOIEMENT AUTOMATIQUE
   deploy-automated:
     runs-on: ubuntu-latest
     needs: build-docker-automated
@@ -179,16 +144,14 @@ jobs:
       - name: Checkout du code
         uses: actions/checkout@v3
     
-      - name: Déploiement automatique simple
+      - name: Déploiement automatique
         run: |
           echo "🚀 DÉPLOIEMENT AUTOMATIQUE"
           echo "========================="
           
-          # 1. Arrêter l'ancien conteneur (si existant)
           docker stop todo-app-production 2>/dev/null || true
           docker rm todo-app-production 2>/dev/null || true
           
-          # 2. Démarrer le nouveau conteneur avec l'image fraîchement construite
           docker run -d \
             --name todo-app-production \
             -p 8080:5000 \
@@ -199,12 +162,10 @@ jobs:
           echo "📅 Déployé le: $(date)"
           echo "🔗 SHA du commit: ${{ github.sha }}"
           
-          # 3. Vérification que l'app fonctionne
           sleep 3
           echo "🔍 Vérification du déploiement..."
           curl -f http://localhost:8080/health || echo "⚠️ L'endpoint /health n'est pas disponible"
 
-  # PHASE 5: MONITORING ET LOGS RÉELS
   monitoring-reel:
     runs-on: ubuntu-latest
     needs: deploy-automated
@@ -212,72 +173,50 @@ jobs:
       - name: Checkout du code
         uses: actions/checkout@v3
       
-      - name: 1. Démarrer l'application dans Docker
+      - name: Démarrer l'application
         run: |
-          echo "🐳 ÉTAPE 1: DÉMARRAGE DE L'APPLICATION"
-          echo "======================================"
+          echo "🐳 DÉMARRAGE DE L'APPLICATION"
+          echo "============================="
           
-          # Construire l'image
           cd backend
           docker build -t todo-app-monitor .
           
-          # Démarrer le conteneur
           docker run -d \
             --name todo-app-monitor-container \
             -p 5001:5000 \
             todo-app-monitor
           
           echo "✅ Application démarrée sur port 5001"
-          
-          # Attendre que l'app soit prête
           sleep 5
-          echo "Attente terminée, vérification..."
-          docker ps | grep todo-app-monitor-container
-      
-      - name: 2. Collecter les logs avec 'docker logs'
+
+      - name: Collecter les logs
         run: |
-          echo ""
-          echo "📝 ÉTAPE 2: COLLECTE DES LOGS DOCKER"
-          echo "===================================="
+          echo "📝 COLLECTE DES LOGS DOCKER"
+          echo "==========================="
           
-          echo "--- Logs du conteneur (docker logs) ---"
           docker logs todo-app-monitor-container || echo "⚠️ Pas de logs disponibles"
           
-          # Sauvegarder les logs
           docker logs todo-app-monitor-container 2>/dev/null > docker-logs.txt || echo "Aucun log" > docker-logs.txt
           echo "✅ Premier log :"
           head -3 docker-logs.txt
-      
-      - name: 3. Surveiller CPU/RAM avec 'docker stats'
+
+      - name: Surveiller CPU/RAM
         run: |
-          echo ""
-          echo "📈 ÉTAPE 3: SURVEILLANCE CPU/RAM"
-          echo "================================"
+          echo "📈 SURVEILLANCE CPU/RAM"
+          echo "======================="
           
-          echo "--- Métriques système (docker stats) ---"
-          echo "Cette commande montre l'utilisation réelle du conteneur :"
-          
-          # Afficher les stats une fois
           docker stats --no-stream todo-app-monitor-container 2>/dev/null || echo "Le conteneur n'est pas en cours d'exécution"
           
-          # Sauvegarder les stats
-          docker stats --no-stream --format "table {{.Container}}\t{{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.MemPerc}}" todo-app-monitor-container 2>/dev/null > docker-stats.txt || echo "CONTAINER ID   NAME                 CPU %     MEM USAGE / LIMIT     MEM %
-todo-app-monitor-container   todo-app-monitor-container   0.15%     25.3MiB / 1.94GiB     1.28%" > docker-stats.txt
+          docker stats --no-stream --format "table {{.Container}}\t{{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.MemPerc}}" todo-app-monitor-container 2>/dev/null > docker-stats.txt || echo "Stats non disponibles" > docker-stats.txt
           
-          echo ""
           echo "✅ Données CPU/RAM sauvegardées :"
           cat docker-stats.txt
-      
-      - name: 4. Mesurer le temps d'exécution
+
+      - name: Mesurer le temps d'exécution
         run: |
-          echo ""
-          echo "⏱️ ÉTAPE 4: MESURE DU TEMPS D'EXÉCUTION"
-          echo "======================================"
+          echo "⏱️ MESURE DU TEMPS D'EXÉCUTION"
+          echo "=============================="
           
-          echo "Test : Temps d'exécution de 'docker logs'"
-          echo "Commande mesurée: time docker logs --tail 2 todo-app-monitor-container"
-          
-          # Mesurer le temps
           start_time=$(date +%s%N)
           docker logs --tail 2 todo-app-monitor-container 2>/dev/null || echo "Commande échouée"
           end_time=$(date +%s%N)
@@ -285,47 +224,36 @@ todo-app-monitor-container   todo-app-monitor-container   0.15%     25.3MiB / 1.
           elapsed_ms=$((($end_time - $start_time)/1000000))
           echo "⏱️ Temps mesuré: ${elapsed_ms}ms"
           
-          # Sauvegarder le temps
           echo "Temps de réponse: ${elapsed_ms}ms" > execution-time.txt
-      
-      - name: 5. Générer le rapport et dashboard (version SIMPLIFIÉE)
+
+      - name: Générer le dashboard
         run: |
-          echo ""
-          echo "📊 ÉTAPE 5: GÉNÉRATION DU DASHBOARD"
-          echo "==================================="
+          echo "📊 GÉNÉRATION DU DASHBOARD"
+          echo "=========================="
           
-          # Lire les données
           CPU_RAM_DATA=$(cat docker-stats.txt 2>/dev/null | tail -1 || echo "todo-app-monitor-container   0.15%     25.3MiB / 1.94GiB     1.28%")
           EXEC_TIME=$(cat execution-time.txt 2>/dev/null || echo "45ms")
           
-          # Créer le dashboard sans EOF complexe
           echo "# 🐳 Dashboard de Monitoring Réel" > dashboard-dynamique.md
           echo "" >> dashboard-dynamique.md
           echo "## 📊 Données Collectées le $(date)" >> dashboard-dynamique.md
           echo "" >> dashboard-dynamique.md
-          echo "### 1. Métriques CPU/RAM (via docker stats)" >> dashboard-dynamique.md
+          echo "### 1. Métriques CPU/RAM" >> dashboard-dynamique.md
           echo "\`\`\`" >> dashboard-dynamique.md
           echo "${CPU_RAM_DATA}" >> dashboard-dynamique.md
           echo "\`\`\`" >> dashboard-dynamique.md
           echo "" >> dashboard-dynamique.md
-          echo "### 2. Temps d'exécution mesuré" >> dashboard-dynamique.md
+          echo "### 2. Temps d'exécution" >> dashboard-dynamique.md
           echo "- Temps: ${EXEC_TIME}" >> dashboard-dynamique.md
-          echo "" >> dashboard-dynamique.md
-          echo "### 3. Preuves de collecte" >> dashboard-dynamique.md
-          echo "- ✅ docker logs: exécuté" >> dashboard-dynamique.md
-          echo "- ✅ docker stats: exécuté (voir ci-dessus)" >> dashboard-dynamique.md
-          echo "- ✅ time: mesuré (${EXEC_TIME})" >> dashboard-dynamique.md
           echo "" >> dashboard-dynamique.md
           echo "*Généré automatiquement par le pipeline CI/CD*" >> dashboard-dynamique.md
           
-          echo "✅ Dashboard généré :"
-          cat dashboard-dynamique.md
+          echo "✅ Dashboard généré"
           
-          # Nettoyage
           docker stop todo-app-monitor-container 2>/dev/null || true
           docker rm todo-app-monitor-container 2>/dev/null || true
-      
-      - name: 6. Télécharger toutes les preuves
+
+      - name: Télécharger les preuves
         uses: actions/upload-artifact@v4
         with:
           name: monitoring-preuves-reel
@@ -335,7 +263,6 @@ todo-app-monitor-container   todo-app-monitor-container   0.15%     25.3MiB / 1.
             execution-time.txt
             dashboard-dynamique.md
 
-  # PHASE 6: RAPPORT FINAL
   final-report:
     runs-on: ubuntu-latest
     needs: monitoring-reel
@@ -355,14 +282,13 @@ todo-app-monitor-container   todo-app-monitor-container   0.15%     25.3MiB / 1.
           echo "   1. Validation de la structure du projet"
           echo "   2. Tests automatisés CI/CD"
           echo "   3. Build Docker automatisé"
-          echo "   4. Déploiement automatique"  # AJOUTÉ !
+          echo "   4. Déploiement automatique"
           echo "   5. Monitoring et logs"
           echo ""
           echo "🐳 DÉTAILS DU BUILD DOCKER AUTOMATISÉ:"
           echo "   - Processus déclenché automatiquement sur git push"
           echo "   - Construction de 2 images: backend et frontend"
           echo "   - Validation de la syntaxe des Dockerfiles"
-          echo "   - Aucun registre externe requis (Docker Hub)"
           echo ""
           echo "🚀 DÉTAILS DU DÉPLOIEMENT AUTOMATIQUE:"
           echo "   - L'application est déployée automatiquement après chaque build"
