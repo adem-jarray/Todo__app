@@ -171,6 +171,54 @@ jobs:
           echo "   - Aucune intervention manuelle nécessaire"
           echo "   - Validation complète de la conteneurisation"
 
+    # PHASE 4: MONITORING ET LOGS
+  monitoring-logs:
+    runs-on: ubuntu-latest
+    needs: build-docker-automated
+    steps:
+      - name: Checkout du code
+        uses: actions/checkout@v3
+      
+      - name: Générer des logs d'application
+        run: |
+          echo "📊 ================================"
+          echo "📊 PHASE 4: MONITORING ET LOGS"
+          echo "📊 ================================"
+          echo ""
+          
+          # 1. Créer un fichier de logs
+          echo "📝 COLLECTE DES LOGS:" > monitoring-report.txt
+          echo "====================" >> monitoring-report.txt
+          echo "$(date) - INFO: Démarrage du monitoring" >> monitoring-report.txt
+          echo "$(date) - INFO: Application Todo en cours d'exécution" >> monitoring-report.txt
+          echo "$(date) - METRIC: cpu_usage=15%" >> monitoring-report.txt
+          echo "$(date) - METRIC: memory_usage=120MB" >> monitoring-report.txt
+          echo "$(date) - METRIC: api_requests=42" >> monitoring-report.txt
+          echo "$(date) - METRIC: active_users=3" >> monitoring-report.txt
+          echo "$(date) - INFO: Fin de la collecte" >> monitoring-report.txt
+          
+          # 2. Afficher les logs
+          echo "✅ LOGS GÉNÉRÉS:"
+          cat monitoring-report.txt
+          
+          echo ""
+          echo "📈 RÉSUMÉ DES MÉTRIQUES:"
+          echo "- Utilisation CPU: 15%"
+          echo "- Utilisation Mémoire: 120MB"
+          echo "- Requêtes API: 42"
+          echo "- Utilisateurs actifs: 3"
+          
+          echo ""
+          echo "💡 EXPLICATION:"
+          echo "Ceci simule un système de monitoring qui collecte"
+          echo "automatiquement des logs et métriques de l'application."
+
+      - name: Télécharger le rapport de monitoring
+        uses: actions/upload-artifact@v3
+        with:
+          name: monitoring-report
+          path: monitoring-report.txt
+
   # PHASE 4: RAPPORT FINAL
   final-report:
     runs-on: ubuntu-latest
