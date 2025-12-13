@@ -1,13 +1,14 @@
 version: '3.8'
 
 services:
-  # Application à monitorer
+  # Application à monitorer - utilisez le VRAI port
   todo-app:
     build: ./backend
     ports:
-      - "3000:5000"
+      - "5001:5000"    # ← CHANGÉ : 5001 au lieu de 3000
     environment:
       - NODE_ENV=production
+      - MONGO_URI=mongodb://mongodb:27017/todo_db  # ← AJOUTÉ si besoin
     networks:
       - monitoring-network
 
@@ -32,10 +33,9 @@ services:
     image: grafana/grafana:latest
     container_name: grafana
     ports:
-      - "3001:3000"
+      - "4000:3000"    # ← CHANGÉ : 4000 au lieu de 3001 (pour éviter conflit)
     volumes:
       - grafana_data:/var/lib/grafana
-      - ./monitoring/grafana-dashboard.json:/etc/grafana/provisioning/dashboards/dashboard.json
     environment:
       - GF_SECURITY_ADMIN_PASSWORD=admin
       - GF_USERS_ALLOW_SIGN_UP=false
@@ -44,16 +44,6 @@ services:
     restart: unless-stopped
     depends_on:
       - prometheus
-
-  # Node Exporter pour métriques système
-  node-exporter:
-    image: prom/node-exporter:latest
-    container_name: node-exporter
-    ports:
-      - "9100:9100"
-    networks:
-      - monitoring-network
-    restart: unless-stopped
 
 volumes:
   prometheus_data:

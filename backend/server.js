@@ -129,6 +129,32 @@ if (!isTest) {
 }
 const Todo = require('./models/Todo');
 
+// ======================= ROUTE RACINE AJOUTÉE =======================
+// Route racine - Page d'accueil de l'API
+app.get('/', (req, res) => {
+  res.json({
+    message: 'Todo App API - DevOps Project',
+    version: '1.0.0',
+    documentation: 'Available endpoints:',
+    endpoints: {
+      todos: {
+        GET: '/todos - Get all todos',
+        POST: '/todos - Create a todo',
+        PUT: '/todos/:id - Update a todo',
+        DELETE: '/todos/:id - Delete a todo'
+      },
+      monitoring: {
+        metrics: '/metrics - Prometheus metrics',
+        health: '/health - Health check',
+        stats: '/monitoring/stats - Detailed statistics'
+      }
+    },
+    status: 'running',
+    timestamp: new Date().toISOString()
+  });
+});
+// ======================= FIN ROUTE RACINE =======================
+
 // Routes avec tracking des métriques
 app.get('/todos', async (req, res) => {
   try {
@@ -208,4 +234,5 @@ app.listen(PORT, () => {
   console.log(`Metrics available at http://localhost:${PORT}/metrics`);
   console.log(`Health check at http://localhost:${PORT}/health`);
   console.log(`Monitoring stats at http://localhost:${PORT}/monitoring/stats`);
+  console.log(`API documentation at http://localhost:${PORT}/`);
 });
