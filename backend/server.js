@@ -3,236 +3,224 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 require('dotenv').config();
 
-// Ajout pour le monitoring
 const client = require('prom-client');
+const winston = require('winston');
+const { combine, timestamp, json, errors, printf } = winston.format; // Destructure necessary formats
 
 const app = express();
 
-// ======================= MONITORING SETUP =======================
-// Créer un Registry pour les métriques
-const register = new client.Registry();
-
-// Collecter les métriques par défaut (CPU, mémoire, etc.)
-client.collectDefaultMetrics({ 
-  register,
-  prefix: 'todo_app_',
-  gcDurationBuckets: [0.001, 0.01, 0.1, 1, 2, 5]
+/* ======================= LOGGER (LOKI) ======================= */
+// Ensure logs are structured JSON for Loki.
+const logger = winston.createLogger({
+    level: process.env.NODE_ENV === 'production' ? 'info' : 'debug',
+    format: combine(
+        errors({ stack: true }), // Log stack trace for errors
+        timestamp(),
+        json() // CRITICAL: Output structured JSON for Loki
+    ),
+    transports: [
+        new winston.transports.Console()
+    ]
 });
 
-// Métriques personnalisées
-const httpRequestDurationMicroseconds = new client.Histogram({
-  name: 'http_request_duration_seconds',
-  help: 'Durée des requêtes HTTP en secondes',
-  labelNames: ['method', 'route', 'status_code'],
-  buckets: [0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 2, 5]
-});
-
-const activeRequests = new client.Gauge({
-  name: 'active_requests',
-  help: 'Nombre de requêtes actives en cours'
-});
-
-const todoOperationsCounter = new client.Counter({
-  name: 'todo_operations_total',
-  help: 'Nombre total d\'opérations sur les todos',
-  labelNames: ['operation'] // create, read, update, delete
-});
-
-const memoryUsageGauge = new client.Gauge({
-  name: 'memory_usage_bytes',
-  help: 'Utilisation mémoire en bytes',
-  labelNames: ['type'] // rss, heapTotal, heapUsed, external
-});
-
-const responseTimeGauge = new client.Gauge({
-  name: 'response_time_ms',
-  help: 'Temps de réponse des requêtes en millisecondes'
-});
-
-// Enregistrer les métriques
-register.registerMetric(httpRequestDurationMicroseconds);
-register.registerMetric(activeRequests);
-register.registerMetric(todoOperationsCounter);
-register.registerMetric(memoryUsageGauge);
-register.registerMetric(responseTimeGauge);
-
-// Endpoint pour les métriques Prometheus
-app.get('/metrics', async (req, res) => {
-  try {
-    // Mettre à jour les métriques mémoire
-    const mem = process.memoryUsage();
-    memoryUsageGauge.labels('rss').set(mem.rss);
-    memoryUsageGauge.labels('heapTotal').set(mem.heapTotal);
-    memoryUsageGauge.labels('heapUsed').set(mem.heapUsed);
-    memoryUsageGauge.labels('external').set(mem.external);
-    
-    res.set('Content-Type', register.contentType);
-    const metrics = await register.metrics();
-    res.end(metrics);
-  } catch (err) {
-    res.status(500).end(err.message);
-  }
-});
-
-// Middleware pour mesurer les requêtes
+// We replace morgan with a simple custom middleware for Request Logging.
+// This ensures the log entry is a structured JSON object, not a plain string.
 app.use((req, res, next) => {
-  const start = process.hrtime();
-  activeRequests.inc();
-  
-  // Enregistrer la fin de la requête
-  res.on('finish', () => {
-    activeRequests.dec();
-    
-    // Calculer la durée
-    const diff = process.hrtime(start);
-    const duration = diff[0] + diff[1] / 1e9; // en secondes
-    
-    httpRequestDurationMicroseconds
-      .labels(req.method, req.route?.path || req.path, res.statusCode.toString())
-      .observe(duration);
-    
-    responseTimeGauge.set(duration * 1000); // en millisecondes
-  });
-  
-  next();
+    // Log the start of the request
+    logger.info(`Incoming request: ${req.method} ${req.originalUrl}`, {
+        method: req.method,
+        url: req.originalUrl,
+        clientIp: req.ip,
+        type: 'http_in'
+    });
+
+    res.on('finish', () => {
+        // Log the end of the request
+        logger.info(`Completed request: ${req.method} ${req.originalUrl}`, {
+            method: req.method,
+            url: req.originalUrl,
+            status: res.statusCode,
+            contentLength: res.get('Content-Length'),
+            type: 'http_out'
+        });
+    });
+    next();
 });
 
-// Endpoint de santé avec métriques
+
+/* ======================= MONITORING SETUP ======================= */
+const register = new client.Registry();
+// Register default metrics (CPU, RAM, GC, etc.) with the prefix
+client.collectDefaultMetrics({
+    register,
+    prefix: 'todo_app_',
+    gcDurationBuckets: [0.001, 0.01, 0.1, 1, 2, 5]
+});
+
+// Histogram for HTTP request duration (Temps d'exécution)
+const httpRequestDurationSeconds = new client.Histogram({
+    name: 'http_request_duration_seconds',
+    help: 'Durée des requêtes HTTP en secondes',
+    labelNames: ['method', 'route', 'status_code'],
+    buckets: [0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 2, 5],
+    registers: [register]
+});
+
+// Gauge for active requests
+const activeRequests = new client.Gauge({
+    name: 'active_requests',
+    help: 'Nombre de requêtes actives',
+    registers: [register]
+});
+
+// Counter for application operations
+const todoOperationsCounter = new client.Counter({
+    name: 'todo_operations_total',
+    help: "Nombre total d'opérations sur les todos",
+    labelNames: ['operation'],
+    registers: [register]
+});
+
+// NOTE: Redundant: memoryUsageGauge and responseTimeGauge removed, as default metrics cover them.
+
+
+/* ======================= REQUEST TRACKING MIDDLEWARE ======================= */
+let activeRequestCount = 0;
+
+app.use((req, res, next) => {
+    // Use the express router path (req.route) for Prometheus labels when available, 
+    // otherwise fallback to the raw path (req.path).
+    const routePath = req.route ? req.route.path : req.path;
+    const start = process.hrtime();
+    
+    // Increment active request count
+    activeRequestCount++;
+    activeRequests.set(activeRequestCount);
+
+    res.on('finish', () => {
+        // Decrement active request count
+        activeRequestCount--;
+        activeRequests.set(activeRequestCount);
+
+        const diff = process.hrtime(start);
+        const duration = diff[0] + diff[1] / 1e9; // Convert to seconds
+
+        // Observe the duration
+        httpRequestDurationSeconds
+            .labels(req.method, routePath, res.statusCode.toString())
+            .observe(duration);
+    });
+
+    next();
+});
+
+/* ======================= METRICS ENDPOINT ======================= */
+// Prometheus will scrape this endpoint
+app.get('/metrics', async (req, res) => {
+    res.set('Content-Type', register.contentType);
+    res.end(await register.metrics());
+});
+
+/* ======================= HEALTH CHECK ======================= */
 app.get('/health', (req, res) => {
-  const health = {
-    status: 'UP',
-    timestamp: new Date().toISOString(),
-    uptime: process.uptime(),
-    memory: process.memoryUsage(),
-    metrics: {
-      active_requests: activeRequests.hashMap['']?.value || 0
-    }
-  };
-  res.json(health);
+    res.json({
+        status: 'UP',
+        uptime: process.uptime(),
+        active_requests: activeRequestCount,
+        timestamp: new Date().toISOString()
+    });
 });
-// ======================= FIN MONITORING =======================
 
-// CORS configuration
+/* ======================= APP SETUP ======================= */
 app.use(cors({
-  origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
-  credentials: true
+    origin: process.env.CORS_ORIGIN || 'http://localhost:3001',
+    credentials: true
 }));
 
 app.use(express.json());
 
-let isTest = process.env.NODE_ENV === 'test';
-if (!isTest) {
-  const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/todo_db';
-  mongoose.connect(MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true })
-    .then(() => console.log('MongoDB connected'))
-    .catch(err => console.error('MongoDB connection error:', err));
+if (process.env.NODE_ENV !== 'test') {
+    const MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/todo_db';
+    mongoose
+        .connect(MONGO_URI)
+        .then(() => logger.info('MongoDB connected'))
+        .catch(err => logger.error('MongoDB connection error', { error: err.message, stack: err.stack })); // Log error details
 }
+
 const Todo = require('./models/Todo');
 
-// ======================= ROUTE RACINE AJOUTÉE =======================
-// Route racine - Page d'accueil de l'API
+/* ======================= ROOT ======================= */
 app.get('/', (req, res) => {
-  res.json({
-    message: 'Todo App API - DevOps Project',
-    version: '1.0.0',
-    documentation: 'Available endpoints:',
-    endpoints: {
-      todos: {
-        GET: '/todos - Get all todos',
-        POST: '/todos - Create a todo',
-        PUT: '/todos/:id - Update a todo',
-        DELETE: '/todos/:id - Delete a todo'
-      },
-      monitoring: {
-        metrics: '/metrics - Prometheus metrics',
-        health: '/health - Health check',
-        stats: '/monitoring/stats - Detailed statistics'
-      }
-    },
-    status: 'running',
-    timestamp: new Date().toISOString()
-  });
+    res.json({
+        message: 'Todo App API - DevOps Project',
+        status: 'running',
+        timestamp: new Date().toISOString()
+    });
 });
-// ======================= FIN ROUTE RACINE =======================
 
-// Routes avec tracking des métriques
+/* ======================= TODOS ENDPOINTS ======================= */
+// All routes must be defined AFTER the Prometheus middleware (`app.use(..)`), 
+// but BEFORE the metrics endpoint (`app.get('/metrics')`).
+
 app.get('/todos', async (req, res) => {
-  try {
-    todoOperationsCounter.inc({ operation: 'read' });
-    const todos = await Todo.find().sort({ createdAt: -1 });
-    res.json(todos);
-  } catch (err) {
-    todoOperationsCounter.inc({ operation: 'read_error' });
-    res.status(500).json({ error: 'Server error' });
-  }
+    try {
+        todoOperationsCounter.inc({ operation: 'read' });
+        const todos = await Todo.find().sort({ createdAt: -1 });
+        res.json(todos);
+    } catch (err) {
+        todoOperationsCounter.inc({ operation: 'read_error' });
+        logger.error('Error reading todos', { error: err.message, stack: err.stack, endpoint: '/todos' }); // Log error
+        res.status(500).json({ error: 'Server error' });
+    }
 });
 
 app.post('/todos', async (req, res) => {
-  try {
-    todoOperationsCounter.inc({ operation: 'create' });
-    const { text } = req.body;
-    if (!text || !text.trim()) {
-      return res.status(400).json({ error: 'Text is required' });
+    try {
+        todoOperationsCounter.inc({ operation: 'create' });
+        const todo = new Todo({ text: req.body.text });
+        res.json(await todo.save());
+    } catch (err) {
+        todoOperationsCounter.inc({ operation: 'create_error' });
+        logger.error('Error creating todo', { error: err.message, stack: err.stack, endpoint: '/todos' }); // Log error
+        res.status(500).json({ error: 'Server error' });
     }
-    const todo = new Todo({ text: text.trim() });
-    const saved = await todo.save();
-    res.json(saved);
-  } catch (err) {
-    todoOperationsCounter.inc({ operation: 'create_error' });
-    res.status(500).json({ error: 'Server error' });
-  }
 });
 
 app.put('/todos/:id', async (req, res) => {
-  try {
-    todoOperationsCounter.inc({ operation: 'update' });
-    const updated = await Todo.findByIdAndUpdate(req.params.id, req.body, { new: true });
-    if (!updated) return res.status(404).json({ error: 'Todo not found' });
-    res.json(updated);
-  } catch (err) {
-    todoOperationsCounter.inc({ operation: 'update_error' });
-    res.status(500).json({ error: 'Server error' });
-  }
+    try {
+        todoOperationsCounter.inc({ operation: 'update' });
+        const updated = await Todo.findByIdAndUpdate(req.params.id, req.body, { new: true });
+        if (!updated) {
+            logger.warn(`Todo not found for update: ${req.params.id}`);
+            return res.status(404).json({ error: 'Not found' });
+        }
+        res.json(updated);
+    } catch (err) {
+        todoOperationsCounter.inc({ operation: 'update_error' });
+        logger.error(`Error updating todo ${req.params.id}`, { error: err.message, stack: err.stack, endpoint: `/todos/${req.params.id}` }); // Log error
+        res.status(500).json({ error: 'Server error' });
+    }
 });
 
 app.delete('/todos/:id', async (req, res) => {
-  try {
-    todoOperationsCounter.inc({ operation: 'delete' });
-    await Todo.findByIdAndDelete(req.params.id);
-    res.json({ message: 'Todo deleted' });
-  } catch (err) {
-    todoOperationsCounter.inc({ operation: 'delete_error' });
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
-// Endpoint pour obtenir les stats de monitoring
-app.get('/monitoring/stats', (req, res) => {
-  const stats = {
-    timestamp: new Date().toISOString(),
-    process: {
-      uptime: process.uptime(),
-      memory: process.memoryUsage(),
-      cpu: process.cpuUsage()
-    },
-    metrics: {
-      active_requests: activeRequests.hashMap['']?.value || 0,
-      todo_operations: Object.fromEntries(
-        Object.entries(todoOperationsCounter.hashMap).map(([key, value]) => [
-          key.replace('operation:', ''), 
-          value.value
-        ])
-      )
+    try {
+        todoOperationsCounter.inc({ operation: 'delete' });
+        const deleted = await Todo.findByIdAndDelete(req.params.id);
+        if (!deleted) {
+            logger.warn(`Todo not found for deletion: ${req.params.id}`);
+            return res.status(404).json({ error: 'Not found' });
+        }
+        res.json({ message: 'Todo deleted' });
+    } catch (err) {
+        todoOperationsCounter.inc({ operation: 'delete_error' });
+        logger.error(`Error deleting todo ${req.params.id}`, { error: err.message, stack: err.stack, endpoint: `/todos/${req.params.id}` }); // Log error
+        res.status(500).json({ error: 'Server error' });
     }
-  };
-  res.json(stats);
 });
 
+/* ======================= START ======================= */
+/* INTERNAL PORT = 5000 (Docker: 5001:5000) */
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-  console.log(`Metrics available at http://localhost:${PORT}/metrics`);
-  console.log(`Health check at http://localhost:${PORT}/health`);
-  console.log(`Monitoring stats at http://localhost:${PORT}/monitoring/stats`);
-  console.log(`API documentation at http://localhost:${PORT}/`);
+    logger.info(`Server running on port ${PORT}`);
 });

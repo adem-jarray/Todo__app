@@ -1,7 +1,0 @@
-1-clone the project files
-2-create the docker-compose.yml file in the project root.
-3-create Dockerfile in frontend and backend
-4-update the .env file in backend
-5-we make sure that the backend CORS is configured to accept requests from the frontend(server.js)
-6-run docker-compose up --build
-7-go to http://localhost:3000
